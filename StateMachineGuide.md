@@ -458,6 +458,6 @@ param faction, faction - optional
 shows text for given time, plays speech and movie, for faction, or human if no given faction
 
 
-#EaWX Galactic Framework
+# EaWX Galactic Framework
 For information, and documentation, as well as guides on how to use and modify the eawx-galactic-framework, view the readme in the repository below
 https://github.com/SvenMarcus/eawx-galactic-framework
