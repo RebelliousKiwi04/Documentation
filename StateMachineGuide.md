@@ -55,7 +55,7 @@ require("eawx-statemachine/EawXState")
 
 ---@param dsl dsl
 return function(dsl)
-    --Declares Policy, effect, and conditions classes from dsl in the state machine itself
+    --Declares Policy, effect, and conditions from dsl
     local policy = dsl.policy
     local effect = dsl.effect
     local owned_by = dsl.conditions.owned_by
