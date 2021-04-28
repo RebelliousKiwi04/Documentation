@@ -1,98 +1,18 @@
-# EawX Lua modifications guide
+# EaWX State Machine Guide
 
-### Galactic Conquest Framework
-Empire at war expanded uses Pox's eawx-galactic-framework which is free release, found here https://github.com/SvenMarcus/eawx-galactic-framework
-it is a system that loads modules froma  plugin folder, resolves dependencies automatically and then updates them at a set time decided by plugin targets
-it also includes two very useful and very powerful things
-the crossplot - a library for communicating across different story plots
-and the class script, to allow for object oriented programming in EaW
+### Setting Up a new State machine
 
-# Setting up a Plugin
-Plugins for the galactic level are folders containing two files, an init.lua and the main plugin file, the folder containing these files must be in the eawx-plugins folder
-Setting up plugins for gameobjects is just as easy, except in the eawx-plugins-gameobject-space, or eawx-plugins-gameobject-land directories
-Plugin init files are setup like this 
-```lua
-require("eawx-std/plugintargets")
-require("eawx-plugins/my-plugin/MyPlugin")
-
-return {
-    --the always() target ensures the plugin is updated every frame
-    target = PluginTargets.always(),
-    --if the required_planets tag is set to true, the plugin :update() function is repeated for every planet in mod every frame, with the planet class as parameter
-    requires_planets = false,
-    --Plugins this is dependent on
-    dependencies = { "another-plugin" },
-    --all plugins have self, and ctx, as parameters, then dependencies are unpacked as params in order
-    init = function(self, ctx, the_other_plugin)
-    --Return the plugin class from MyPlugin.lua
-        return MyPlugin(the_other_plugin)
-    end
-}
+When setting up a new state machine instance for a GC there are several things that need to be done, the first of these is making a player agnostic story script for it, to start just copy the code below, changing the following line to your new GC id
+```Lua
+local gc_id = "NEWGCNAME"
 ```
 
-Plugin classes are set up like this
-```lua
-require("eawx-std/class")
-
----@class MyPlugin
-MyPlugin = class()
---classes when called automatically run the :new() function
-function MyPlugin:new(args)
-    self.args = args
-end
---Update is called every frame if plugin target is always(), and takes param as planet class, if requires_planets is true
-function MyPlugin:update()
-
-end
-
-return MyPlugin
-```
-
-Possible Plugin targets
-plugintargets.always() - Ensures plugin is updated every frame
-plugintargets.never() - Is never updated, used to react to observable events only, does not have :update() function
-plugintargets.interval(time_int) updates the plugin every time_int seconds, time_int must be an integer number
-plugintargets.story_flag("FLAG_NAME", playerwrapper) - uses the Check_Story_Flag function to check if flag is active, then allows update
-
-The galactic conquest class is a large part of the framework, handling events such as production started, finished, cancelled, planet owner changed, and hero killed, as well as handling every planet in mod through a custom planet class, which is used in the update function of plugins that require planets to update
-
-it has several attributes that are accessible via ctx.galactic_conquest
-galactic_conquest.HumanPlayer - is human player playerwrapper
-galactic_conquest.Planets - table of all planets, using planet class, can be arrayed into using string, like this Planets["PLANET_NAME"]
-galactic_conquest.Events.EventName - Events that can be listened to via the Observable class, like this ctx.galactic_conquest.GalacticHeroKilled:attach_listener(self.function_to_trigger,self --[[ self is just parameters for listener function, in the case of hero killed, it's hero name]]) 
-
-Functions
-get_all_planets_by_faction(playerwrapper) - Returns list of planets owned by faction, with key being string
-get_number_of_planets_owned_by_faction(playerwrapper) - returns integer for num of owned planets
-
-Events
-PlanetOwnerChanged - Listener Args: planet, new_owner_name, old_owner_name
-GalacticProductionStarted - Listener Args: planet, game_object_type_name
-GalacticProductionFinished - Listener Args: planet, game_object_type_name
-GalacticProductionCanceled - Listener Args: planet, game_object_type_name
-GalacticHeroKilled - Listener args: hero name
-TacticalBattleStarting - no listener args
-TacticalBattleEnding - no listener args
-
-
-# The Planet class
-the galactic_conquest class wraps all planets ina  custom class, accessible via ctx.galactic_conquest.Planets and is used individually as update parameter for plugins that require planets
-
-the planet class has several methods
-Planet:get_owner() - returns playerwrapper
-Planet:get_game_object() - returns planet GameObjectWrapper
-Planet:get_name() - returns name string in all caps
-Planet:has_structure(structure_name) - returns true if structure is present, false otherwise
-
-# Initialising the framework
-Initialising the framework is generally done in EaWX in the player agnostic story script file, it is run via the EaWXMod Script, which loads the pluginloader, and galactic_conquest class
-
-for example this is a demo file that will initialise the framework with no context, (in EaWX we have plot for context which is Player_Agnostic_Plot.xml, accessible via ctx.plot)
-```lua
+```Lua
 require("PGDebug")
 require("PGStateMachine")
 require("PGStoryMode")
 
+require("eawx-util/StoryUtil")
 require("eawx-std/EawXMod")
 
 function Definitions()
@@ -100,261 +20,288 @@ function Definitions()
 
     ServiceRate = 0.1
 
-    StoryModeEvents = {Universal_Story_Start = Begin_GC}
+    StoryModeEvents = {Zoom_Zoom = Begin_GC}
 end
 
 function Begin_GC(message)
     if message == OnEnter then
-        -- The context table allows you to pass variables to
-        -- the init() function of your plugins
-        local context = {}
+        CONSTANTS = ModContentLoader.get("GameConstants")
+        GameObjectLibrary = ModContentLoader.get("GameObjectLibrary")
+        local plot = StoryUtil.GetPlayerAgnosticPlot()
 
-        ActiveMod = EawXMod(context)
+        local plugin_list = ModContentLoader.get("InstalledPlugins")
+        local context = {
+            plot = plot
+        }
+        local gc_id = "PROGRESSIVE"
+
+        ActiveMod = EawXMod(context, plugin_list, gc_id)
     elseif message == OnUpdate then
         ActiveMod:update()
     end
 end
 ```
 
-any variables defined in the context table will be accessible from plugins, like this
-```lua
-context ={
-    test= "ThisIsAString"
-}
+Save this File as something like GCPlayerAgnosticNewGCName.lua in Data/Scripts/Story and tie it to your new GC via XML
 
---...and in a plugin you can print this variale permentantly via
-StoryUtil.ShowScreenText(ctx.test, -1)
+Now create a new file in this directory, with NEWGCNAME being the same name you put in the Player Agnostic file
+
+State Machine: ``Scripts\Library\eawx-mod-id\eawx-plugins\statemachine-main\NEWGCNAME.lua``
+
+This code below is the PROGRESSIVE.lua file for FotR, it decides transitions for eras in FotR progressives, and the effects for those transitions
+
+```Lua
+require("eawx-statemachine/EawXState")
+
+---@param dsl dsl
+return function(dsl)
+    --Declares Policy, effect, and conditions classes from dsl in the state machine itself
+    local policy = dsl.policy
+    local effect = dsl.effect
+    local owned_by = dsl.conditions.owned_by
+    --EaWXState.with_empty_policy() returns empty state, meaning it does nothing
+    local initialize = EawXState.with_empty_policy()
+    --Setup State and all following states
+    local setup = EawXState(require("eawx-states/fotr-setup-state"))
+    local era_two = EawXState(require("eawx-states/fotr-progressive-era-two"))
+    local era_three = EawXState(require("eawx-states/fotr-progressive-era-three"))
+    local era_four = EawXState(require("eawx-states/fotr-progressive-era-four"))
+
+
+    --Sets up transition from initialize state, which is empty as decided above, to state setup, when 2 in game ticks have passed
+    dsl.transition(initialize)
+        :to(setup)
+        :when(policy:timed(2))
+        :end_()
+    --Transitions from setup state, to era_two state if tech level hits 2
+    dsl.transition(setup)
+        :to(era_two)
+        :when(policy:tech_level(2))
+        :end_()
+    --Transitions from setup to era 3 if tech level hits 3
+    dsl.transition(setup)
+        :to(era_three)
+        :when(policy:tech_level(3))
+        :end_()
+    --Transitions from setup to era four if tech level hits 4
+    dsl.transition(setup)
+        :to(era_four)
+        :when(policy:tech_level(4))
+        :end_()
+
+
+    --Transitions from era two, to era 3, after 1200 in game tics, and transfers all planets to empire if they are owned by Corporate_Sector, and sets tech level lto 3 for the given faction list 
+    dsl.transition(era_two)
+        :to(era_three)
+        :when(policy:timed(1200))
+        :with_effects(
+            effect:transfer_planets(unpack(FindPlanet.Get_All_Planets()))
+            :to_owner("Empire")
+            :if_(owned_by("Corporate_Sector")),
+            effect:set_tech_level(3)
+            :for_factions({"Rebel", "Empire", "Pentastar", "Hutts", "Pirates", "Teradoc"})
+        ):end_()
+    
+    --Transition from era 3 to era 4 after 1200 in game ticks, transferring all planets to empire if owned by the CSA, and setting tech level to 4 for given faction list
+    dsl.transition(era_three)
+        :to(era_four)
+        :when(policy:timed(1200))
+        :with_effects(
+            effect:transfer_planets(unpack(FindPlanet.Get_All_Planets()))
+            :to_owner("Empire")
+            :if_(owned_by("Corporate_Sector")),
+            effect:set_tech_level(4)
+            :for_factions({"Rebel", "Empire", "Pentastar", "Hutts", "Pirates", "Teradoc"})
+        ):end_()
+        --Returns initialize state
+    return initialize
+end
 ```
 
-#Using gameobject plugins
-Gameobject plugins in EaWX are loaded automatically by checking the scripts entry of any unit in GameObjectLibrary.lua, for example here is a dummy unit entry in GameObjectLibrary
+There are several different types of transition policy
+The below transitions state when 20 in game ticks hav epassed
+Timed: Example : ``:when(policy:timed(20))``
+Transitions to next state when boba fett dies
+Hero Death: ``:when(policy:hero_dies("Boba_Fett_Team"))``
+Transitions to next state when thrawn regicide dummy is built
+Object Construction ``:when(policy:object_constructed("Thrawn_regicide_dummy"))``
+
+There are also oseveral different types of effects these can have
+Transfer Planet OwnerShip:
 ```lua
-["IMPERIAL_BOARDING_SHUTTLE"] = {
-  Scripts = {
-    "multilayer",
-    "boarding"
-   },
-  Fighters = {}
-},```
-this unit will load the 'multilayer' and 'boarding' plugins on load
-GameObject plugins are similar to Galactic plugins in almost every way, apart from the fact that they dont load the galactic conquest class, and dont have a requires_planets tag
+            effect:transfer_planets(planets) -- Can have multiple, must be concatenated strings, like this "PLANET1,"PLANETTWO"
+            :to_owner("Name")
+            :if_(owned_by("Name")), --Not needed, but is helpful
+```
+Setting Tech Level:
+```lua
+    effect:set_tech_level(integer)--Sets tech level to given integer for given faction list
+    :for_factions(list) --List must be table, like this {"Rebel", "Empire", "Pentastar", "Hutts", "Pirates", "Teradoc"}
 
-#Single file plugins
-
-Plugins can be coded in a single file, like the following, and initialised in the table, here is a one file plugin with only an update funcion
+State File Layout:
+The below is an empty state, which can easily be set in your setup script with this 
+``    local initialize = EawXState.with_empty_policy()
+``
 
 ```lua
-require("eawx-std/plugintargets")
-
 return {
-    target = PluginTargets.interval(45)
-    init = function(self, ctx)
-        return {
-            update = function(self)
-                -- do something
-            end
-        }
+    --Triggered on state entered
+    on_enter = function(self, state_context)
+
+    end,
+    --Run once per frame
+    on_update = function(self, state_context)
+
+    end,
+    --run on state exit
+    on_exit = function(self, state_context)
+
     end
+
 }```
-the plugin will do the update function every 45 seconds, but nothing else, it is useful for loading documentation such as the Government display
 
-# Using events in plugins with the Observable class
+Below is the fotr progressive era 2 state, with comments for examples
 
-Here is an example that shows how to use events from the galactic_conquest class in a plugin, this plugin will return the cost of a unit on completion of production
+```Lua
 
-the init file:
-```lua
-require("eawx-std/plugintargets")
-require("eawx-plugins/productionfinished/productionfinishedlistener")
+require("eawx-util/StoryUtil")
+require("PGStoryMode")
+require("PGSpawnUnits")
+
 return {
-    target = PluginTargets.never()
-    init = function(self, ctx)
-        return ProductionFinishedListener(ctx.galactic_conquest)
+    on_enter = function(self, state_context)
+        --Set current era global value !!!!!REQUIRED OR THINGS WILL BREAK!!! namely fighters
+        GlobalValue.Set("CURRENT_ERA", 2)
+        --Sets venator events bool to false - Used for venator research
+        self.VenatorEvents = false
+        --Returns table of all active planets
+        self.Active_Planets = StoryUtil.GetSafePlanetTable()
+        --Grabs time state was entered
+        self.entry_time = GetCurrentTime()
+
+        --If you have entered era 2 within 5 ticks of game starting, then give message from palpatine if player is empire, dooku if player is CIS
+        if self.entry_time <= 5 then
+            if Find_Player("local") == Find_Player("Empire") then
+
+                StoryUtil.Multimedia("TEXT_STORY_INTRO_PROGRESSIVE_REPUBLIC_PALPATINE_ERA_2", 15, nil, "PalpatineFotR_Loop", 0)
+            elseif Find_Player("local") == Find_Player("Rebel") then
+
+                StoryUtil.Multimedia("TEXT_STORY_INTRO_PROGRESSIVE_CIS_DOOKU_ERA_2", 15, nil, "Dooku_Loop", 0)
+            end
+
+            --Grab era 2 spawns table from file, and spawn them at safe planet from active planets table for faction
+            self.Starting_Spawns = require("eawx-mod-fotr/spawn-sets/EraTwoStartSet")
+            for faction, herolist in pairs(self.Starting_Spawns) do
+                for planet, spawnlist in pairs(herolist) do
+                    StoryUtil.SpawnAtSafePlanet(planet, Find_Player(faction), self.Active_Planets, spawnlist)  
+                end
+            end
+
+            --Grab static fleet spawn sets
+			self.Static_Spawns = require("eawx-mod-fotr/spawn-sets/EraTwoStaticFleetSet")
+            --Iterate through all static fleet spawns, spawning them only for AI players at enemy planets
+            for faction, unitlist in pairs(self.Static_Spawns) do
+                if (Find_Player(faction) == Find_Player("EMPIRE")) and (Find_Player("REBEL").Is_Human()) then
+                    for planet, spawnlist in pairs(unitlist) do
+                        StoryUtil.SpawnAtSafePlanet(planet, Find_Player(faction), self.Active_Planets, spawnlist)  
+                    end
+                elseif (Find_Player(faction) ~= Find_Player("EMPIRE")) and (Find_Player("EMPIRE").Is_Human()) then
+                    for planet, spawnlist in pairs(unitlist) do
+                        StoryUtil.SpawnAtSafePlanet(planet, Find_Player(faction), self.Active_Planets, spawnlist)  
+                    end
+                end
+            end
+        end
+    end,
+    --Triggered each frame
+    on_update = function(self, state_context)
+        --If player has been in state for more than 400 ticks and venator research hasn't happened, then trigger venator research
+        local current = GetCurrentTime() - self.entry_time
+        if (current >= 400) and (self.VenatorEvents == false) then
+            self.VenatorEvents = true
+            crossplot:publish("VENATOR_RESEARCH", "empty")
+        end
+    end,
+    --Triggered on state exit
+    on_exit = function(self, state_context)
     end
 }
 ```
-the main plugin file:
+
+### Event Handler
+Event handler is a state agnostic class that creates and runs specific events, they can be fired by states, or anything that is capable of using the crossplot, you can have the publishing file
+publish information to an event, and trigger it
+Each GC has its own event handler
+
+Event Handler: Scripts\Library\eawx-mod-id\eawx-plugins\event-handler\NEWGCNAME.lua
+A basic event manager setup looks like this
+
 ```lua
 require("eawx-std/class")
+--These are only needed if the event is one of the following
+require("eawx-events/GenericResearch")
+require("eawx-events/GenericSwap")
+require("eawx-events/GenericConquer")
 
----@class ProductionFinishedListener
-ProductionFinishedListener = class()
 
----@param galactic_conquest GalacticConquest
-function ProductionFinishedListener:new(galactic_conquest)
-    self.human_player = galactic_conquest.HumanPlayer
-    self.total_amount_of_objects = 0
-    --Attatch a listener to the event using Observable methods, you can also use detach_listener with the exact same arguments to detach a listener from events
-    galactic_conquest.Events.GalacticProductionFinished:attach_listener(self.on_production_finished, self)
+EventManager = class()
+--takes galactic conquest class, human player, and table of planets as parameters
+function EventManager:new(galactic_conquest, human_player, planets)
+    --Store parameters as variables in class
+    self.galactic_conquest = galactic_conquest
+    self.human_player = human_player
+    self.planets = planets
+
 end
-
----We don't like to lose money, so we return it to the player on build completion
----@param planet Planet
----@param object_type_name string
---Is called from the listener above, when production of a unit finishes
-function ProductionFinishedListener:on_production_finished(planet, object_type_name)
-    if not planet:get_owner().Is_Human() then
-        return
-    end
-
-    self.total_amount_of_objects = self.total_amount_of_objects + 1
-
-    local object_type = Find_Object_Type(object_type_name)
-    if object_type then
-        local cost = object_type.Get_Build_Cost()
-        self.human_player.Give_Money(cost)
-    end
+--Triggered each frame
+function EventManager:update()
+    
 end
+--Returns eventmanager class
+return EventManager
 ```
-# Creating an Observable class that can be listened to
-Using the Observable class you can also listen to events from other plugins with listeners, an example plugin setup you can use to listen to events from other pluginsis below
-Observable plugin
-init:
+
+Research Events can be set up like this from inside the event manager
 ```lua
-require("eawx-std/plugintargets")
-require("eawx-plugins/listenertest/listenertest")
-return {
-    target = PluginTargets.always()
-    init = function(self, ctx)
-        return ListenerTest()
-    end
-}
-
+        self.PhaseIIResearch = GenericResearch(self.galactic_conquest,
+        "PHASE_TWO_RESEARCH", -- Name Of Research, used for crossplot and story tags
+        "Dummy_Research_Clone_Trooper_II", -- Research Object
+         "Empire", --Player name
+        {"Clonetrooper_Phase_Two_Team", "BARC_Squad", "ARC_Phase_Two_Team"}, -- List of items to unlock
+        {"Clonetrooper_Phase_One_Team", "Speeder_Bike_Squad", "ARC_Phase_One_Team"},--List of items to lock
+         nil,--List of items to spawn, for this event there are none so nil
+          nil, --Planet to spawn items at, in this case nothing to spawn so nil
+        {"CLONE_UPGRADES"}) -- Connected event to trigger, is crossplot event
 ```
+Swap events are set up like this
 ```lua
-
-require("eawx-std/Observable")--Required for observable plugins
-require("eawx-std/class")
---@class ListenerTest
---Plugins can be, extended by the Observable class, meaning it inherits the methods of the observable class
-ListenerTest = class(Observable)
-
----@param ctx Context
-function ListenerTest:new(ctx)
---Another way you can listen to individual events is by declaring an observable variable
-    self.PluginUpdated = Observable()
-end
-
-function ListenerTest:update()
---Triggers any listeners that are listening to the PluginUpdated variable with optional args
-   self.PluginUpdate:notify(optional_args)
-   --Triggers ant listeners listening to the ListenerTest class with optional args
-   self:notify(optional_args)
-end
-
-return ListenerTest
-
+    self.CloneSwap = GenericSwap("CLONE_UPGRADES",--Event name
+     "EMPIRE",--Faction name
+        {"Fordo", "Cody", "Rex"},--Objects to despawn
+        {"Fordo2_Team", "Cody2_Team", "Rex2_Team"})--Objects to spawn
 ```
-and the plugin listening to it:
+
+Conquer events are set up like this 
 ```lua
-require("eawx-std/plugintargets")
-require("eawx-plugins/ListeningPlugin/ListeningPlugin")
-return {
-    target = PluginTargets.never()
-        dependencies = {"listenertest"},--has listener test as dependency
-    init = function(self, ctx, listenertest)
-        return ListeningPlugin(listenertest)
-    end
-}
-
+    self.conquertest = GenericConquer(
+        self.galactic_conquest,
+        "EVENT_NAME",
+        "PLANET_NAME", -- must be capitalised
+        "CONQUERING_FACTION"
+        {Reward items},
+        {unlock list},
+        {lock list},
+        "CONNECTED_EVENT_TO_TRIGGER" -- Is crossplot event
+    )
 ```
-```lua
+video and multimedia events can be made for events in the EventLogRepository.xml file under XML/Conquests/Events with the EVENT_NAME_STARTED, and EVENT_NAME_COMPLETED tags
+they will need the AI_NOTIFICATION event triggers, though note these are not compulsary
+multimedia events will automatically use the TEXT_SPEECH_EVENTNAME_STARTED, or _FINISHED or _FAILED for conquering string names
 
-require("eawx-std/class")
---@class ListeningPlugin
-ListeningPlugin = class()
-
----@param listenertest ListenerTest
-function ListeningPlugin:new(listenertest)
-    self.listenertest = listenertest
-        --Attach listener to class that triggers on_class_update function with args
-    self.listenertest:attach_listener(self.on_class_update,self)
-    --Attach listener to pluginUpdate variable
-    self.listenertest.PluginUpdate:attach_listener(self.on_plugin_update,self)
-end
---Triggered on listenertest class notify
-function ListeningPlugin:on_class_update(optional_args)
-    --Do something
-end
---Triggered on listenertest.PluginUpdate notify
-function ListeningPlugin:on_plugin_update(optional_args)
-    --Do something
-end
-
-return ListeningPlugin
-
-```
-# Using the crossplot
-The crossplot can be used to great effect to bring variable across story plot, one big example in EawX is baording, where the boarding plugin publishes a boarded unit to the crossplot, where gamescoring.lua (Data/Scripts/Miscallaneous) listens to it, and pushes it through the boarding handler, which gamescoring sends to teh boardingListener plugin after tactical battle end, and events which publish data from gamescoring to the galactic_conquest class to trigger event listeners
-
-an example of how to communicate from stroy plot to story plot is here:
-Plot 1:
-```lua
-require("eawx-crossplot/crossplot")
-
-function Definitions()
-    DebugMessage("%s -- In Definitions", tostring(Script))
-
-    ServiceRate = 0.1
-
-    StoryModeEvents = {Universal_Story_Start = Begin_GC}
-end
-
-function Begin_GC(message)
-    if message == OnEnter then
-        crossplot:galactic()
-        crossplot:subscribe("sub_test", Receive)
-    elseif message == OnUpdate then
-        crossplot:update()
-    end
-end
-
-function Receive(text_entry)
-    Game_Message(text_entry)
-end
-```
-Plot 2:
-```lua
-require("eawx-crossplot/crossplot")
-
-function Definitions()
-    DebugMessage("%s -- In Definitions", tostring(Script))
-
-    ServiceRate = 0.1
-
-    StoryModeEvents = {Universal_Story_Start = Begin_GC}
-end
-
-function Begin_GC(message)
-    if message == OnEnter then
-        crossplot:galactic()
-        Sleep(1) -- sleep to make sure the other plot had time to subscribe
-        crossplot:publish("sub_test", "TEXT_FACTION_EMPIRE")
-    elseif message == OnUpdate then
-        crossplot:update()
-    end
-end
-```
-
-Plot one subscribes to the crossplot instance "sub_test" triggering the Recieve function with the args given by Plot 2, in the publish line "TEXT_FACTION_EMPIRE", triggering the recieve function in Plot 1 printing Empire, to the droid log, 
-
-NOTE: The crossplot must be updated every frame to ensure it publishes and recives data correctly
-NOTE: you must subscribe to a crossplot instance before it is published, or the subscription will never recieve the data
-
+Note that the EventLogRepository.xml file will need to be linked to the GC in the GC XML plot files
 
 # Using EaWX utilities
-Empire at war expanded has a variety of different utilities all stored in the eawx-util folder, under Data/Scripts/Library/eawx-util
-they include ChangeOwnerUtilities, CachedEquationEvaluator, Comparators, GalacticUtil, PlanetTable, PopulatePlanetUtilities, and StoryUtil
-all of which contain a variety of extremely useful utility functions that one can use to great extent if they know how to
-
-### CachedEquationEvaluator.lua
-functions from this file can be accessed from any lua script using ``require("eawx-util/CachedEquationEvaluator)``
-
-this utility is used in FreeStores as an easy way to evaluate perceptions and store equation results for future use, for example to evaluate a perception you could do
-```lua
-CachedEquationEvaluator:evaluate(equation_name, faction, object)
-```
-and it would return the result to the entry, whilst also storing it in a cache to be accessed at later time if necessary, you can reset it using ``CachedEquationEvaluator:reset()``
+EaWX has a variety of different utility files containing functions that can be extremely useful for a variety of different things, the most important of these are below
 
 ### ChangeOwnerUtilities.lua
 functions from this file can be accessed from any lua script using ``require("eawx-util/ChangeOwnerUtilities)``
@@ -367,20 +314,6 @@ ChangePlanetOwnerAndReplace
 This function is effectively the same as the above, but changes despawns all units on the planet, and replaces them with the exact same units for the newOwner parameter
 it can be run using ``ChangePlanetOwnerAndRetreat(planets, newOwner)``
 
-``get_friendly_units_on_planet(player,planet)``
-returns a table containing all friendly units on a planet
-
-``get_relevant_object(unit)``
-returns the object necessary to spawn the unit on the galactic map, if unit is in company it will return company, otherwise returns GameObjectWrapper
-
-``spawn_units_on_friendly_location(unitTypes, unitOwners)``
-param unitTypes table, unitOwners table
-spawns units on planet friendly to the index of the unit in the unitOwners Table, if owner is human, shows text in top left saying where units retreated to
-
-``is_valid_category(unit)``
-param unit GameObjectWrapper
-Returns true if unit has a category that allows it to move to a different planet
-
 ``Destroy_Planet(planet)``
 param planet Planet GameObjectWrapper
 destroys planet using Dummy Planet Killer
@@ -388,7 +321,7 @@ destroys planet using Dummy Planet Killer
 ### GalacticUtil.lua
 functions from this file can be accessed from any lua script using ``require("eawx-util/GalacticUtil)``
 this file contains a variety of functions that are useful for doing things on the galactic level, such as spawning things, finding friendly planet, and finding planets
-the most notable usage of this is spawning units on galactic map after boarding
+the most notable usage of this is spawning units on galactic map after boarding, I would personally advise using the functions in storyutil, or base game functions instead of these
 
 ``GalacticUtil.spawn(data)``
 param data, table
@@ -523,149 +456,3 @@ param int, integer
 param faction, faction - optional
 
 shows text for given time, plays speech and movie, for faction, or human if no given faction
-
-# State Machine
-After TR 3.1 and FotR 1.1 EaWX has moved away from standard story scripting and instead story scripting is now handled by a State Machine.
-In order to set up the system in a GC you'll need to create a new player agnostic GC file for the GC, for this you can just Copy GCPlayerAgnostic and rename it, 
-you then edit this line to be whatever id you want
-```Lua
-local gc_id = "NEWGCNAME"
-```
-this is the tag that will be used for the name of the event handler, and state files at these locations
-
-State Machine: Scripts\Library\eawx-mod-id\eawx-plugins\statemachine-main\NEWGCNAME.lua
-
-the most basic form of the state machine defines eras, and a way to transition between them, it uses credits to oload into different eras, meaning the max amount of eras is 11
-due to the nature of the state machine it can be in only one state at a time, but a GC can have multiple statemachines initialised at once, here is a dummy state thand gives all corporate sector planets to empire, and transitions all factions to tech 3
-```Lua
-return function(dsl)
-    local policy = dsl.policy
-    local effect = dsl.effect
-    local owned_by = dsl.conditions.owned_by
-
-    local initialize = EawXState.with_empty_policy() -- Returns empty state file, does nothing on call, update, and exit
-    local setup = EawXState(require("eawx-states/statefilename"))--Location of setup state
-    
-    dsl.transition(initialize )
-        :to(setup )
-        :when(policy:timed(20))
-        :with_effects(
-            effect:transfer_planets(unpack(FindPlanet.Get_All_Planets()))
-            :to_owner("Empire")
-            :if_(owned_by("Corporate_Sector")),
-            effect:set_tech_level(3)
-            :for_factions({"Rebel", "Empire", "Pentastar", "Hutts", "Pirates", "Teradoc"})
-        ):end_()
-      
-    return initialize
-end```
-
-There are several different types of transition policy
-Timed: Example : :when(policy:timed(20))
-Hero Death: :when(policy:hero_dies("Boba_Fett_Team"))
-Object Construction :when(policy:object_constructed("Thrawn_regicide_dummy"))
-
-There are also oseveral different types of effects these can have
-Transfer Planet OwnerShip:
-```lua
-            effect:transfer_planets(planets) -- Can have multiple, must be concatenated strings
-            :to_owner("Name")
-            :if_(owned_by("Name")), --Not needed, but is helpful
-```
-Setting Tech Level:
-```lua
-    effect:set_tech_level(integer)
-    :for_factions(list)
-
-State File Layout:
-```lua
-return {
-    --Triggered on state entered
-    on_enter = function(self, state_context)
-
-    end,
-    --Run once per frame
-    on_update = function(self, state_context)
-
-    end,
-    --run on state exit
-    on_exit = function(self, state_context)
-
-    end
-
-}```
-
-#Event Handler
-Event handler is a state agnostic class that creates and runs specific events, they can be fired by states, or anything that is capable of using the crossplot, you can have the publishing file
-publish information to an event, and trigger it
-Each GC has its own event handler
-
-Event Handler: Scripts\Library\eawx-mod-id\eawx-plugins\event-handler\NEWGCNAME.lua
-A basic event manager setup looks like this
-
-```lua
-require("eawx-std/class")
---These are only needed if the event is one of the following
-require("eawx-events/GenericResearch")
-require("eawx-events/GenericSwap")
-require("eawx-events/GenericConquer")
-
-
-EventManager = class()
---takes galactic conquest class, human player, and table of planets as parameters
-function EventManager:new(galactic_conquest, human_player, planets)
-    --Store parameters as variables in class
-    self.galactic_conquest = galactic_conquest
-    self.human_player = human_player
-    self.planets = planets
-
-end
---Triggered each frame
-function EventManager:update()
-    
-end
---Returns eventmanager class
-return EventManager
-```
-
-Research Events can be set up like this
-```lua
-    self.researchtest = GenericResearch(
-        self.galactic_conquest, -- used for accessing events
-        "RESEACH_NAME", -- used for crossplot and story tags
-        object_name,
-        player,
-        {list of items to unlock},
-        {list of items to lock},
-        {list of items to spawn},
-        "Planet_To_Spawn_Items_At",
-        "CONNECTED_EVENT_TO_TRIGGER"
-    )
-```
-Swap events are set up like this
-```lua
-    self.swaptestevent = GenericSwap(
-        "EVENT_TAG",
-        "FACTION_NAME",
-        {Objects to be replaced},
-        {objects to spawn}
-    )
-```
-
-Conquer events are set up like this 
-```lua
-    self.conquertest = GenericConquer(
-        self.galactic_conquest,
-        "EVENT_NAME",
-        "PLANET_NAME", -- must be capitalised
-        "CONQUERING_FACTION"
-        {Reward items},
-        {unlock list},
-        {lock list},
-        "CONNECTED_EVENT_TO_TRIGGER"
-    )
-```
-
-video and multimedia events can be made for events in the EventLogRepository.xml file under XML/Conquests/Events with the EVENTNAME_STARTED, EVENTNAME_COMPLETED
-they will need the AI_NOTIFICATION event triggers
-multimedia events will automatically use the TEXT_SPEECH_EVENTNAME_STARTED, or _FINISHED or _FAILED for conquering string names
